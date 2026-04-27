@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Suit Home - Investigation Agency</title>
+    <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Special Elite', serif; background-color: #d2c1a8; background-image: url('https://www.transparenttextures.com/patterns/paper-fibers.png'); }
+        .chat-container { height: calc(100vh - 180px); }
+        .msg-box { animation: fadeIn 0.4s ease-in-out; border-bottom: 1px solid rgba(58, 45, 36, 0.1); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        /* Markdown styling for basic response */
+        .msg-content p { margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+    <!-- 헤더 -->
+    <header class="p-5 border-b-2 border-[#3a2d24]/20 bg-[#e8dcc4] flex justify-between items-center shadow-md">
+        <h1 class="text-2xl font-black tracking-widest text-[#3a2d24]">HOME SUIT HOME</h1>
+        <div class="text-[10px] font-bold opacity-50 text-[#3a2d24]">CASE ACTIVE: 1924-0427</div>
+    </header>
+
+    <!-- 채팅창 -->
+    <main id="chat-box" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 chat-container"></main>
+
+    <!-- 로딩 표시 -->
+    <div id="loading" class="hidden px-8 py-2 italic text-sm text-[#3a2d24]/60 animate-pulse">조수가 서류 더미를 뒤지는 중...</div>
+
+    <!-- 하단 입력창 -->
+    <footer class="p-4 md:p-6 bg-[#b5a285]/40 border-t border-[#3a2d24]/10">
+        <div class="max-w-4xl mx-auto flex gap-2 md:gap-4 bg-[#e8dcc4] border-2 border-[#3a2d24] p-1 shadow-[4px_4px_0px_#3a2d24]">
+            <input type="text" id="input" class="flex-1 bg-transparent p-2 md:p-3 outline-none text-base md:text-lg text-[#3a2d24]" placeholder="단서를 기록하십시오..." autocomplete="off">
+            <button id="send" class="bg-[#3a2d24] text-[#e8dcc4] px-4 md:px-8 py-2 md:py-3 font-bold hover:bg-[#1a1410] transition-colors active:translate-y-1 active:shadow-none">전송</button>
+        </div>
+    </footer>
+
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const loading = document.getElementById('loading');
+
+        function addMessage(role, text) {
+            const div = document.createElement('div');
+            const isUser = role === 'user';
+            div.className = "msg-box p-5 " + (isUser ? "bg-[#3a2d24]/5 italic" : "");
+            
+            const senderName = isUser ? "탐정" : "조수";
+            const color = isUser ? "text-[#3a2d24]/70" : "text-[#8b0000]";
+
+            // Replace line breaks with <br> for simple formatting
+            const formattedText = text.replace(/\n/g, '<br>');
+
+            div.innerHTML = `
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-[10px] font-bold uppercase ${color}">[${senderName}]</span>
+                </div>
+                <div class="msg-content text-base md:text-lg leading-relaxed text-[#2a221b]">${formattedText}</div>
+            `;
+            
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const msg = input.value.trim();
+            if(!msg || !loading.classList.contains('hidden')) return;
+
+            addMessage('user', msg);
+            input.value = '';
+            loading.classList.remove('hidden');
+
+            try {
+                // Vercel Serverless Function 호출 (/api/chat.js)
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    addMessage('assistant', data.text);
+                } else {
+                    addMessage('assistant', "[보고] 사건 자료를 찾는 데 실패했습니다: " + (data.error || "알 수 없는 오류"));
+                }
+            } catch(e) {
+                addMessage('assistant', "[보고] 통신망에 장애가 발생했습니다. 나중에 다시 시도하십시오.");
+                console.error(e);
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        sendBtn.onclick = sendMessage;
+        input.onkeydown = (e) => { if(e.key === 'Enter') sendMessage(); };
+
+        window.onload = () => {
+            addMessage('assistant', "탐정님, 오셨습니까. 새로운 사건 수첩을 준비해두었습니다. 무엇부터 조사해볼까요?");
+        };
+    </script>
+</body>
+</html>
