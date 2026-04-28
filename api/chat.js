@@ -1,4 +1,4 @@
-// 가장 안정적인 1.5 flash 모델로 고정합니다.
+// 가장 안정적인 1.5 flash 모델로 고정하여 할당량 문제를 최소화합니다.
 const MODEL_NAME = "gemini-1.5-flash";
 
 export default async function handler(req, res) {
@@ -10,16 +10,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST 요청만 가능합니다.' });
 
-  // 2. 환경 변수 확인 (대소문자: Gemini_API_Key)
-  const API_KEY = process.env.Gemini_API_Key;
+  // 2. 탐정님이 확정하신 환경 변수명 GEMINI_API_KEY 적용
+  const API_KEY = process.env.GEMINI_API_KEY;
 
   if (!API_KEY) {
     return res.status(500).json({ 
-      error: "Vercel 환경 변수 'Gemini_API_Key'가 누락되었습니다. Settings에서 이름을 확인하십시오." 
+      error: "Vercel 환경 변수 'GEMINI_API_KEY'를 찾을 수 없습니다. Settings -> Environment Variables에서 이름을 다시 확인하고 Save 후 반드시 Redeploy 하십시오." 
     });
   }
 
-  // 3. 구글 Gemini API 호출 URL (v1beta 사용)
+  // 3. 구글 Gemini API 호출 URL
   const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
 
   try {
@@ -42,15 +42,20 @@ export default async function handler(req, res) {
     const data = await geminiResponse.json();
     
     if (geminiResponse.ok) {
+      // 답변 추출 성공
       const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "조수가 기록을 찾지 못해 대답을 망설이고 있습니다.";
       res.status(200).json({ text: aiText });
     } else {
-      // 쿼터 초과 시 사용자에게 더 명확한 안내를 제공합니다.
-      let friendlyError = data.error?.message || "구글 API 서버 에러";
-      if (friendlyError.includes("quota")) {
-        friendlyError = "현재 구글 서비스 이용자가 많아 조수가 잠시 자리를 비웠습니다. (할당량 초과) 잠시 후 다시 시도해 주십시오.";
+      // 구글 API로부터 에러 수신 시 상세 안내
+      let errorDetail = data.error?.message || "구글 API 서버 에러";
+      
+      if (errorDetail.includes("quota")) {
+        errorDetail = "현재 구글 서비스 이용자가 많아 조수가 잠시 자리를 비웠습니다. (무료 할당량 초과) 잠시 후 다시 시도하거나 새 API 키를 발급받으십시오.";
+      } else if (errorDetail.includes("API key not valid")) {
+        errorDetail = "입력된 API 키가 유효하지 않습니다. GEMINI_API_KEY 값을 다시 확인해 주십시오.";
       }
-      res.status(geminiResponse.status).json({ error: friendlyError });
+      
+      res.status(geminiResponse.status).json({ error: `[보고] ${errorDetail}` });
     }
   } catch (error) {
     res.status(500).json({ error: "서버 내부 통신 장애: " + error.message });
