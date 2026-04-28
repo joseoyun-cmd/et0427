@@ -1,45 +1,58 @@
+// 가장 안정적인 1.5 flash 모델로 고정합니다.
+const MODEL_NAME = "gemini-1.5-flash";
+
 export default async function handler(req, res) {
-  // POST 요청만 허용
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+  // 1. CORS 및 브라우저 보안 헤더 설정
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST 요청만 가능합니다.' });
+
+  // 2. 환경 변수 확인 (대소문자: Gemini_API_Key)
+  const API_KEY = process.env.Gemini_API_Key;
+
+  if (!API_KEY) {
+    return res.status(500).json({ 
+      error: "Vercel 환경 변수 'Gemini_API_Key'가 누락되었습니다. Settings에서 이름을 확인하십시오." 
+    });
   }
 
-  const { message } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({ error: 'API key is not configured in Vercel' });
-  }
+  // 3. 구글 Gemini API 호출 URL (v1beta 사용)
+  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
 
   try {
-    // Gemini 2.5 Flash Preview API 호출 (Vercel 서버 측에서 실행됨)
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    const { message } = req.body;
+
+    const payload = {
+      contents: [{
+        parts: [{
+          text: `너는 1920년대 말투를 쓰는 유능한 탐정 조수야. 탐정님의 말씀에 조수답게 정중하면서도 재치 있게 대답해: ${message}`
+        }]
+      }]
+    };
+
+    const geminiResponse = await fetch(API_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: message }]
-        }],
-        systemInstruction: {
-          parts: [{ text: "당신은 1920년대 사설 탐정 사무소의 조수입니다. 말투는 정중하면서도 시대적 배경에 어울리는 구식 말투(하오체 등)를 사용하세요. 탐정(사용자)을 보조하여 사건을 추리하는 역할을 수행합니다." }]
-        }
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'Gemini API Error');
-    }
-
-    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "대답을 찾지 못했습니다.";
+    const data = await geminiResponse.json();
     
-    return res.status(200).json({ text: aiResponse });
-
+    if (geminiResponse.ok) {
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "조수가 기록을 찾지 못해 대답을 망설이고 있습니다.";
+      res.status(200).json({ text: aiText });
+    } else {
+      // 쿼터 초과 시 사용자에게 더 명확한 안내를 제공합니다.
+      let friendlyError = data.error?.message || "구글 API 서버 에러";
+      if (friendlyError.includes("quota")) {
+        friendlyError = "현재 구글 서비스 이용자가 많아 조수가 잠시 자리를 비웠습니다. (할당량 초과) 잠시 후 다시 시도해 주십시오.";
+      }
+      res.status(geminiResponse.status).json({ error: friendlyError });
+    }
   } catch (error) {
-    console.error('API Error:', error);
-    return res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "서버 내부 통신 장애: " + error.message });
   }
 }
