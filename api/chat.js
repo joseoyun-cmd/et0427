@@ -1,5 +1,5 @@
-// 가장 호환성이 높은 모델 명칭으로 수정합니다.
-const MODEL_NAME = "gemini-1.5-flash-latest";
+// 가장 호환성이 높은 안정화 모델 명칭을 사용합니다.
+const MODEL_NAME = "gemini-1.5-flash";
 
 export default async function handler(req, res) {
   // 1. CORS 및 브라우저 보안 헤더 설정
@@ -10,17 +10,20 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST 요청만 가능합니다.' });
 
-  // 2. 환경 변수 확인
+  // 2. 환경 변수 확인 (대문자 GEMINI_API_KEY 사용)
   const API_KEY = process.env.GEMINI_API_KEY;
 
   if (!API_KEY) {
     return res.status(500).json({ 
-      error: "Vercel 환경 변수 'GEMINI_API_KEY'를 찾을 수 없습니다. Settings -> Environment Variables에서 이름을 다시 확인하고 Save 후 반드시 Redeploy 하십시오." 
+      error: "Vercel 환경 변수 'GEMINI_API_KEY'를 찾을 수 없습니다. Settings -> Environment Variables를 확인하십시오." 
     });
   }
 
-  // 3. 구글 Gemini API 호출 URL (v1beta 모델 경로 수정)
-  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+  /**
+   * 3. 구글 Gemini API 호출 URL 수정
+   * v1beta 대신 정식 버전인 v1을 사용하고, 모델 경로 형식을 표준화합니다.
+   */
+  const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
 
   try {
     const { message } = req.body;
@@ -42,19 +45,16 @@ export default async function handler(req, res) {
     const data = await geminiResponse.json();
     
     if (geminiResponse.ok) {
-      // 답변 추출 성공
+      // 답변 추출
       const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "조수가 기록을 찾지 못해 대답을 망설이고 있습니다.";
       res.status(200).json({ text: aiText });
     } else {
       // 구글 API로부터 에러 수신 시 상세 안내
       let errorDetail = data.error?.message || JSON.stringify(data.error) || "구글 API 서버 에러";
       
-      if (errorDetail.includes("quota")) {
-        errorDetail = "현재 구글 서비스 이용자가 많아 조수가 잠시 자리를 비웠습니다. (무료 할당량 초과) 잠시 후 다시 시도하거나 새 API 키를 발급받으십시오.";
-      } else if (errorDetail.includes("API key not valid")) {
-        errorDetail = "입력된 API 키가 유효하지 않습니다. GEMINI_API_KEY 값을 다시 확인해 주십시오.";
-      } else if (errorDetail.includes("not found")) {
-        errorDetail = "모델 경로를 찾을 수 없습니다. API 버전이나 모델명을 다시 확인해야 합니다.";
+      // 쿼터 초과 시 친절한 안내
+      if (errorDetail.includes("quota") || errorDetail.includes("429")) {
+        errorDetail = "현재 구글 서비스 이용자가 많아 조수가 잠시 자리를 비웠습니다. (할당량 초과) 잠시 후 다시 시도해 주십시오.";
       }
       
       res.status(geminiResponse.status).json({ error: `[보고] ${errorDetail}` });
