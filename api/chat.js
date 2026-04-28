@@ -1,5 +1,5 @@
-// 가장 안정적인 1.5 flash 모델로 고정하여 할당량 문제를 최소화합니다.
-const MODEL_NAME = "gemini-1.5-flash";
+// 가장 호환성이 높은 모델 명칭으로 수정합니다.
+const MODEL_NAME = "gemini-1.5-flash-latest";
 
 export default async function handler(req, res) {
   // 1. CORS 및 브라우저 보안 헤더 설정
@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST 요청만 가능합니다.' });
 
-  // 2. 탐정님이 확정하신 환경 변수명 GEMINI_API_KEY 적용
+  // 2. 환경 변수 확인
   const API_KEY = process.env.GEMINI_API_KEY;
 
   if (!API_KEY) {
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 3. 구글 Gemini API 호출 URL
+  // 3. 구글 Gemini API 호출 URL (v1beta 모델 경로 수정)
   const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
 
   try {
@@ -47,12 +47,14 @@ export default async function handler(req, res) {
       res.status(200).json({ text: aiText });
     } else {
       // 구글 API로부터 에러 수신 시 상세 안내
-      let errorDetail = data.error?.message || "구글 API 서버 에러";
+      let errorDetail = data.error?.message || JSON.stringify(data.error) || "구글 API 서버 에러";
       
       if (errorDetail.includes("quota")) {
         errorDetail = "현재 구글 서비스 이용자가 많아 조수가 잠시 자리를 비웠습니다. (무료 할당량 초과) 잠시 후 다시 시도하거나 새 API 키를 발급받으십시오.";
       } else if (errorDetail.includes("API key not valid")) {
         errorDetail = "입력된 API 키가 유효하지 않습니다. GEMINI_API_KEY 값을 다시 확인해 주십시오.";
+      } else if (errorDetail.includes("not found")) {
+        errorDetail = "모델 경로를 찾을 수 없습니다. API 버전이나 모델명을 다시 확인해야 합니다.";
       }
       
       res.status(geminiResponse.status).json({ error: `[보고] ${errorDetail}` });
